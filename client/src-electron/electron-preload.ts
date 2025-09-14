@@ -32,6 +32,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  sqliteLoad: (key: string) => ipcRenderer.invoke('sqliteLoad', key),
-  sqliteStore: (key: string, value: string) => ipcRenderer.invoke('sqliteStore', key, value),
+  sqliteRead: (key: string) => ipcRenderer.invoke('sqliteRead', key),
+  sqliteCreate: (key: string, value: string) => ipcRenderer.invoke('sqliteCreate', key, value),
+  sqliteUpdate: (key: string, value: string) => ipcRenderer.invoke('sqliteUpdate', key, value),
+  sqliteDelete: (key: string) => ipcRenderer.invoke('sqliteDelete', key)
 });

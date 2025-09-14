@@ -3,8 +3,10 @@ export {};
 declare global {
   interface Window {
     electronAPI: {
-      sqliteLoad: (key: string) => Promise<string>;
-      sqliteStore: (key: string, value: string) => Promise<boolean>;
+      sqliteRead: (key: string) => Promise<string>;
+      sqliteCreate: (key: string, value: string) => Promise<boolean>;
+      sqliteUpdate: (key: string, value: string) => Promise<boolean>;
+      sqliteDelete: (key: string) => Promise<boolean>;
     };
   }
 }

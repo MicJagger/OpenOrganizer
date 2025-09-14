@@ -14,8 +14,8 @@ db.exec(`
   )
 `);
 
-// Load from example table
-export function load(key: string) {
+// Read entry from example table
+export function read(key: string) {
   const query = db.prepare('SELECT value FROM example WHERE id = ?');
   const row = query.get(key) as { value: string } | undefined;
 
@@ -23,7 +23,17 @@ export function load(key: string) {
   return row.value;
 }
 
-// Store in example table
-export function store(key: string, value: string) {
+// Create entry in example table
+export function create(key: string, value: string) {
   db.prepare('INSERT INTO example (id, value) VALUES (?, ?)').run(key, value);
+}
+
+// Update entry in example table
+export function update(key: string, value: string) {
+  db.prepare('UPDATE example SET value = ? WHERE id = ?').run(value, key);
+}
+
+// Delete entry from example table
+export function deleteEntry(key: string) {
+  db.prepare('DELETE FROM example WHERE id = ?').run(key);
 }

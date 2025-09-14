@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url'
 import { ipcMain } from 'electron';
-import { load, store } from './sqlitedb';
+import { read, create, update, deleteEntry } from './sqlitedb';
 
 
 // needed in case process is undefined under Linux
@@ -67,11 +67,23 @@ app.on('activate', () => {
   }
 });
 
-ipcMain.handle('sqliteLoad', (event, key: string) => {
-  return load(key);
+ipcMain.handle('sqliteRead', (event, key: string) => {
+  return read(key);
 });
 
-ipcMain.handle('sqliteStore', (event, key: string, value: string) => {
-  store(key, value);
+ipcMain.handle('sqliteCreate', (event, key: string, value: string) => {
+  create(key, value);
   return { success: true };
 });
+
+ipcMain.handle('sqliteUpdate', (event, key: string, value: string) => {
+  update(key, value);
+  return { success: true };
+});
+
+ipcMain.handle('sqliteDelete', (event, key: string) => {
+  deleteEntry(key);
+  return { success: true };
+});
+
+
