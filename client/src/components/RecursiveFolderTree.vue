@@ -17,10 +17,10 @@
 -->
 <template>
   <ul class = "file-list">
-    <li v-for="folder in folders" :key="folder.id">
+    <li v-for="folder in folders" :key="folder.folderID">
       <div>
           <q-icon name="folder" color="primary" class="q-mr-sm" />
-        {{ folder.name }}
+        {{ folder.folderName }}
       </div>
       <RecursiveFolderTree style="font-size: 15px"
         v-if="folder.children"

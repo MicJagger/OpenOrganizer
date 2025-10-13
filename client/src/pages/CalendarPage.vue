@@ -132,8 +132,18 @@
                     </div>
               </template>
               <q-card-section>
-                <p>Description: {{ item.description }} <br>Date: {{ item.date }}</p>
+                <p>Created on: {{ item.date }}</p>
                  <q-select
+                v-model="item.eventType"
+                :options="eventTypeOptions"
+                label="Event Type"
+                emit-value
+                map-options
+                dense
+                outlined
+                style="background-color: #f2f2f2; margin-bottom: 10px"
+              />
+                <q-select
                 v-model="item.temporaryFolderId"
                 :options="folderDropdownOptions"
                 label="Save in folder"
@@ -141,8 +151,38 @@
                 map-options
                 dense
                 outlined
-                style="background-color: #cacaca; margin-bottom: 10px"
+                style="background-color: #f2f2f2; margin-bottom: 10px"
               />
+              <!-- Render fields for selected event type - each input corresponds to its type -->
+              <div v-for="field in getEventTypeFields(item.eventType)" :key="field.id" style="margin-bottom: 10px">
+                <q-input
+                 v-if="field.type === 'text'"
+                  v-model="item.extension[field.id]"
+                  :type="field.type"
+                  :label="field.name"
+                  outlined
+                  dense
+                  style="background-color: #f2f2f2"
+                />
+                <q-input
+                v-else-if="field.type === 'number'"
+                v-model.number="item.extension[field.id]"
+                :label="field.name"
+                type="number"
+                dense
+                outlined
+                style="background-color: #f2f2f2"
+              />
+              <q-input
+                v-else-if="field.type === 'time'"
+                v-model="item.extension[field.id]"
+                :label="field.name"
+                type="time"
+                dense
+                outlined
+                style="background-color: #f2f2f2"
+              />
+              </div>
                 <div class="row">
                   <q-btn class="login-register-button" style="font-size: 15px; margin-right: 10px" flat label="Save"
                     @click="saveReminder(item)"></q-btn>
@@ -178,14 +218,13 @@
                 <p>Created on: {{ item.date }}</p>
                 <q-select
                 v-model="item.temporaryFolderId"
-
                 :options="folderDropdownOptions"
                 label="Save in folder"
                 emit-value 
                 map-options
                 dense
                 outlined
-                style="background-color: #cacaca; margin-bottom: 10px"
+                style="background-color: #f2f2f2; margin-bottom: 10px"
               />
                 <q-input class="note-box" outlined v-model="noteText" type="textarea"
                   placeholder="Write your note here..." />
@@ -272,9 +311,90 @@ import RecursiveFolderTree from 'src/components/RecursiveFolderTree.vue';
 // Initialize active tab to reminder by default
 const tab = ref('reminders');
 // Array of reminders. Default reminder adds to the current day's date
-const reminders = ref([{id: 'reminder-1', title: 'New Reminder', temporaryTitle: '', description: 'event type field description', date: today(), isSelected: false, expanded: true, folderId: null, temporaryFolderId: null, isSaved: false, titleMessageError: ''}]);
+const reminders = ref([{itemID: 'reminder-1', title: 'New Reminder', temporaryTitle: '', date: today(), isSelected: false, expanded: true, folderID: null, temporaryFolderId: null, isSaved: false, titleMessageError: '', eventType: 1, extension: {} as Record<string, string | number | null>}]);
 // Array of notes
-const notes = ref([{ id: 'note-1', title: 'New Note', temporaryTitle: '', description: 'note description', date: today(), isSelected: false, expanded: true, folderId: null, temporaryFolderId: null, isSaved: false, titleMessageError: ''}]);
+const notes = ref([{ itemID: 'note-1', title: 'New Note', temporaryTitle: '', text: 'note description', date: today(), isSelected: false, expanded: true, folderID: null, temporaryFolderId: null, isSaved: false, titleMessageError: ''}]);
+const eventTypes = [
+    {
+       // In backend each event type is assigned an integer - ex. flight - 1, hotel = 2, etc.
+        id: 1,
+        // Event type name 
+        name: 'Flight',
+        // Color-coded for display in reminder list
+        color: 'blue',
+        // Fields for each event type
+        fields: [
+            {
+               // Essentially the unique ID/key of the field
+                id: 'flightNumber',
+               // Name of the field displayed to the user
+                name: "Flight Number",
+                // Type is helpful for rendering the frontend field inputs to match and input validation. 
+                type: 'number'
+            },
+            {
+                id: 'arrivalTime',
+                name: "Arrival Time",
+                type: 'time'
+            },
+            {
+                id: 'departureTime',
+                name: "Departure Time",
+                type: 'time'
+            },
+            {
+                id: 'airportLocation',
+                name: "Airport Location",
+                type: 'text'
+            },
+        ]
+    },
+    {
+        id: 2,
+        name: 'Hotel',
+        color: 'green',
+        fields: [
+            {
+                id: 'roomNumber',
+                name: "Room Number",
+                type: 'number'
+            },
+            {
+                id: 'checkInTime',
+                name: "Check-in Time",
+                type: 'time'
+            },
+            {
+                id: 'checkOutTime',
+                name: "Check-out Time",
+                type: 'time'
+            },
+            {
+                id: 'hotelLocationn',
+                name: "Hotel Location",
+                type: 'text'
+            },
+        ]
+    }
+    // can add any more event types here
+  ];
+
+  // Map event types to format for q-select dropdown menu
+const eventTypeOptions = computed(() => {
+  return eventTypes.map(eventType => ({
+    label: eventType.name,
+    value: eventType.id
+  }));
+});
+
+// Function to get event type fields - will render different fields based on event type selected
+function getEventTypeFields(selectedEventTypeId: number) {
+  // Find the event type id in the eventTypes array that matches the user selected dropdown event type id
+  // In this way, we can extract the field property for the selected event type
+  const type = eventTypes.find(eventType => eventType.id === selectedEventTypeId);
+  // If the event type is found, return the fields. Otherwise, return an empty array
+  return type ? type.fields : [];
+}
 
 const showSettings = ref(false);
 const showAddFolderName = ref(false);
@@ -290,13 +410,13 @@ const selectedFolderId = ref<number | null>(null);
 
 // This type represents the way that we store the note data
 type Note = {
-  id: string; // unique item ID ex. "note-1" incremented for each new note
+  itemID: string; // unique item ID ex. "note-1" incremented for each new note
   title: string; 
-  description: string; // text stored within the note
+  text: string; // text stored within the note
   date: string; // date it was created
   isSelected: boolean; // checkbox selection
   expanded: boolean; // open or closed
-  folderId: number | null; // null if not saved in any folder yet. The parent folder id the note is saved in 
+  folderID: number | null; // null if not saved in any folder yet. The parent folder id the note is saved in 
   temporaryFolderId: number | null; // The folder selected in the dropdown before the note is saved
    // This is needed to retain the folder state before the note is saved again 
   // Ex. if user has a saved note and selects a folder but then cancels, it reverts back to the previous folderId
@@ -307,25 +427,28 @@ type Note = {
 
 // This type represents the way that we store the reminder data
 type Reminder = {
-  id: string; // unique item ID ex. "reminder-1" incremented for each new reminder
+  itemID: string; // unique item ID ex. "reminder-1" incremented for each new reminder
   title: string; 
-  description: string; // text stored within the reminder. Later this will be split into event type fields.
   date: string; 
   isSelected: boolean; 
   expanded: boolean;
-  folderId: number | null; 
+  folderID: number | null; 
   temporaryFolderId: number | null; 
   temporaryTitle: string; 
   isSaved: boolean; 
   titleMessageError?: string; 
+  eventType: number; // id of the event type the reminder is categorized as
+  extension: Record<string, string | number | null>; // Essentially extension is a json-like object with string ID/keys and any type values  
+  // useful for adding on custom event type fields/extensions that we may not know the types to yet
+  // Need to parse and store this text data in the separate extensions table in the backend
 };
 
 // Each folder/node has a folder id, folder name, parent folder id, and list of child nodes (if there are any so its optional)
 // This type represents the way that we store the folder data
 type Folder = {
-  id: number;
-  name: string;
-  parent_id: number;
+  folderID: number;
+  folderName: string;
+  parentFolderID: number;
   children?: Folder[];
 };
 
@@ -343,12 +466,12 @@ type QTreeFolder = {
 export type { Folder };
 
 // Example flat array of folders
- const folders = ref<Folder[]>([{ id: 1, name: 'Hotels', parent_id: 0 }, 
- { id: 2, name: 'Check-in', parent_id: 1 }, 
- { id: 3, name: 'Check-out', parent_id: 2 }, 
- { id: 4, name: 'Flights', parent_id: 0 }, 
- { id: 5, name: 'Arrival', parent_id: 4 },
- { id: 6, name: 'Departure', parent_id: 5 }
+ const folders = ref<Folder[]>([{ folderID: 1, folderName: 'Hotels', parentFolderID: 0 }, 
+ { folderID: 2, folderName: 'Check-in', parentFolderID: 1 }, 
+ { folderID: 3, folderName: 'Check-out', parentFolderID: 2 }, 
+ { folderID: 4, folderName: 'Flights', parentFolderID: 0 }, 
+ { folderID: 5, folderName: 'Arrival', parentFolderID: 4 },
+ { folderID: 6, folderName: 'Departure', parentFolderID: 5 }
 ]);
 
 // Map folders to format for q-select dropdown menu
@@ -356,8 +479,8 @@ export type { Folder };
 // Computed so it automatically updates whenever folders array updates (if new folder is added it shows up in the options)
 const folderDropdownOptions = computed(() => {
   return folders.value.map(folder => ({
-    label: folder.name,
-    value: folder.id
+    label: folder.folderName,
+    value: folder.folderID
   }));
 });
 
@@ -365,19 +488,19 @@ const folderDropdownOptions = computed(() => {
 const nest = (items: Folder[], id: number):
   Folder[] =>
   // Filter finds all folders where the parent id is equal to the current folder id 
-  items.filter(item => item.parent_id === id)
-    // For each folder, create/map new item object that includes the original folder properties ...item (id, name, parent_id)
+  items.filter(item => item.parentFolderID === id)
+    // For each folder, create/map new item object that includes the original folder properties ...item (id, name, parentFolderID)
     .map(item => ({
       ...item,
       // Add a children property to the item object and recursively call nest function to find children of the current folder
-      children: nest(items, item.id)
+      children: nest(items, item.folderID)
     }));
 
 // Function to convert nested folder tree to Q-Tree format
 function convertFolderTreetoQTree(folders: Folder[]): QTreeFolder[] {
   return folders.map(folder => {
     // Find notes saved in the current folder
-    const notesInCurrFolder = notes.value.filter(note => note.folderId === folder.id && note.isSaved);
+    const notesInCurrFolder = notes.value.filter(note => note.folderID === folder.folderID && note.isSaved);
 
     // For each note, create a QTree node with label and id properties and return it
     const noteTreeNodes = notesInCurrFolder.map((note) => {
@@ -385,27 +508,27 @@ function convertFolderTreetoQTree(folders: Folder[]): QTreeFolder[] {
       // for debugging: console.log(`Placing note "${note.title}" (id: ${note.id}) under folder "${folder.name}" (id: ${folder.id})`);
       return {
         label: note.title,
-        id: `note-${note.id}`, 
+        id: `note-${note.itemID}`, 
         // No icon, color, or children properties for notes
       };
     });
 
     // Find reminders saved in the current folder
-    const remindersInCurrFolder = reminders.value.filter(reminder => reminder.folderId === folder.id && reminder.isSaved);
+    const remindersInCurrFolder = reminders.value.filter(reminder => reminder.folderID === folder.folderID && reminder.isSaved);
 
     // For each reminder, create a QTree node with label and id properties and return it
     const reminderTreeNodes = remindersInCurrFolder.map((reminder) => {
       return {
         label: reminder.title,
-        id: `reminder-${reminder.id}`, 
+        id: `reminder-${reminder.itemID}`, 
         // No icon, color, or children properties for reminders
       };
     });
 
     // For each folder, create a QTree node with label, id, and children properties and return it
     return {
-      label: folder.name,
-      id: folder.id,
+      label: folder.folderName,
+      id: folder.folderID,
       icon: 'folder',
       iconColor: 'blue',
       children: [
@@ -417,7 +540,7 @@ function convertFolderTreetoQTree(folders: Folder[]): QTreeFolder[] {
   });
 }
 
-// Convert folders array to nested n-ary tree (first call will start at root/parent_id 0)
+// Convert folders array to nested n-ary tree (first call will start at root/parentFolderID 0)
 const nestedFolderTree = computed(() => nest(folders.value, 0));
 console.log('nestedFolderTree:', JSON.stringify(nestedFolderTree.value, null, 2));
 
@@ -430,17 +553,18 @@ let newReminderId = reminders.value.length + 1;
 // Function to add a reminder to the list on the specified calendar date
 function addReminder() {
   reminders.value.push({
-    id: `reminder-${newReminderId++}`,
+    itemID: `reminder-${newReminderId++}`,
     title: 'New Reminder', // saved title
-    temporaryTitle: '', // editable title
-    description: 'event type field',
+    temporaryTitle: '', // editable title,
     date: selectedDate.value,
     isSelected: false,
     expanded: true, 
-    folderId: null, 
+    folderID: null, 
     temporaryFolderId: null,
     isSaved: false,
-    titleMessageError: '' // error message for title validation
+    titleMessageError: '', // error message for title validation
+    eventType: 1, // default event type is flight for now (id 1),
+    extension: {} as Record<string, string | number | null>// Default no extensions
   });
   //Close other reminders when a new one is added
   reminders.value.forEach((reminder, index) => {
@@ -455,14 +579,14 @@ let newNoteId = notes.value.length + 1;
 function addNote() {
   // Increment noteID for each new note added so each one has a unique ID
     notes.value.push({
-      id: `note-${newNoteId++}`,
+      itemID: `note-${newNoteId++}`,
       title: 'New Note',
       temporaryTitle: '', // editable title
-      description: 'note description',
+      text: 'note description',
       date: selectedDate.value,
       isSelected: false,
       expanded: true, // Have note carat expanded open by default when addding new note to fill out fields
-      folderId: null, // The folder ID of the folder the note is going to be saved into. Null by default (no folder selected yet),
+      folderID: null, // The folder ID of the folder the note is going to be saved into. Null by default (no folder selected yet),
       temporaryFolderId: null,
       isSaved: false, // Not saved by default until user clicks save button 
       titleMessageError: '' // error message for title validation
@@ -485,14 +609,14 @@ function addFolder() {
     return;
   }
   // Otherwise, folder name is good and add folder to tree
-  // Sets parentID of new folder to currently selected folder in file explorer tree. If no folder is selected, add new folder to root (parent_id = 0)
+  // Sets parentFolderID of new folder to currently selected folder in file explorer tree. If no folder is selected, add new folder to root (parentFolderID = 0)
   const newFolderParentId = selectedFolderId.value ?? 0;
   const newFolderId = folders.value.length + 1;
   folders.value.push({ 
     // Folder IDs are not incremented like notes because folders can't be deleted yet so no risk of duplicate ids
-    id: newFolderId, 
-    name: newFolderName.value, 
-    parent_id: newFolderParentId
+    folderID: newFolderId, 
+    folderName: newFolderName.value, 
+    parentFolderID: newFolderParentId
   });
   // After adding new folder, reset new folder name input, error message, and close popup
   newFolderName.value = '';
@@ -508,7 +632,7 @@ function saveNote(note: Note){
     return;
   }
   note.title = note.temporaryTitle; // Update saved note title to whatever is in editable title field on save
-  note.folderId = note.temporaryFolderId; // Update the actual folder ID to one selected on dropdown on save (this is the saved folderID state)
+  note.folderID = note.temporaryFolderId; // Update the actual folder ID to one selected on dropdown on save (this is the saved folderID state)
   // Set note to be saved after clicking save button so it can show on tree
   note.isSaved = true;
   // After saving note, reset error message
@@ -523,7 +647,7 @@ function saveReminder(reminder: Reminder){
     return;
   }
   reminder.title = reminder.temporaryTitle;
-  reminder.folderId = reminder.temporaryFolderId;
+  reminder.folderID = reminder.temporaryFolderId;
   // Set reminder to be saved after clicking save button so it can show on tree
   reminder.isSaved = true;
   // After saving reminder, reset error message
