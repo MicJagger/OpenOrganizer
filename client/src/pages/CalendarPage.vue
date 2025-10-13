@@ -106,7 +106,7 @@
       <div class="row justify-between items-center">
         <div class="row items-center">
           <q-btn style="font-size: 15px" flat icon="add" @click="addArrayItem" class="q-mr-sm" />
-          <q-checkbox v-model="selectAll" label="Select All" />
+          <q-checkbox v-model="selectAll" color="primary" label="Select All" />
         </div>
         <q-btn style="font-size: 15px" flat icon="delete" @click="deleteArrayItem"></q-btn>
       </div>
@@ -117,7 +117,7 @@
             <q-expansion-item v-model="item.expanded" expand-icon="keyboard_arrow_down">
               <template v-slot:header>
                   <div class="reminder-header-container">
-                    <q-checkbox v-model="item.isSelected" class="q-mr-sm" />
+                    <q-checkbox :color="getEventTypeColor(item.eventType)" v-model="item.isSelected" class="q-mr-sm" />
                     <q-input
                       v-model="item.temporaryTitle"
                       :error="item.titleMessageError != ''"
@@ -182,6 +182,10 @@
                 outlined
                 style="background-color: #f2f2f2"
               />
+              </div>
+              <!-- Use seperate v-if for error instead of :error prop because it's validating two inputs (arrival & departure) instead of 1 -->
+              <div v-if="item.timeMessageError" style="color: #f44336; font-size: 13px; margin-bottom: 8px;">
+                {{ item.timeMessageError }}
               </div>
                 <div class="row">
                   <q-btn class="login-register-button" style="font-size: 15px; margin-right: 10px" flat label="Save"
@@ -311,9 +315,10 @@ import RecursiveFolderTree from 'src/components/RecursiveFolderTree.vue';
 // Initialize active tab to reminder by default
 const tab = ref('reminders');
 // Array of reminders. Default reminder adds to the current day's date
-const reminders = ref([{itemID: 'reminder-1', title: 'New Reminder', temporaryTitle: '', date: today(), isSelected: false, expanded: true, folderID: null, temporaryFolderId: null, isSaved: false, titleMessageError: '', eventType: 1, extension: {} as Record<string, string | number | null>}]);
+const reminders = ref([{itemID: 'reminder-1', title: 'New Reminder', temporaryTitle: '', date: today(), isSelected: false, expanded: true, folderID: null, temporaryFolderId: null, isSaved: false, titleMessageError: '', timeMessageError: '', eventType: 1, extension: {} as Record<string, string | number | null>}]);
 // Array of notes
 const notes = ref([{ itemID: 'note-1', title: 'New Note', temporaryTitle: '', text: 'note description', date: today(), isSelected: false, expanded: true, folderID: null, temporaryFolderId: null, isSaved: false, titleMessageError: ''}]);
+// Object of event types
 const eventTypes = [
     {
        // In backend each event type is assigned an integer - ex. flight - 1, hotel = 2, etc.
@@ -321,7 +326,7 @@ const eventTypes = [
         // Event type name 
         name: 'Flight',
         // Color-coded for display in reminder list
-        color: 'blue',
+        color: 'red',
         // Fields for each event type
         fields: [
             {
@@ -396,6 +401,14 @@ function getEventTypeFields(selectedEventTypeId: number) {
   return type ? type.fields : [];
 }
 
+// Function to get event type colors - will change checkbox to match event type color
+function getEventTypeColor(selectedEventTypeId: number) {
+  // Find the event type id in the eventTypes array that matches the user selected dropdown event type id
+  const type = eventTypes.find(eventType => eventType.id === selectedEventTypeId);
+  // If the event type is found, return the color. Otherwise, return a default color
+  return type ? type.color : 'blue';
+}
+
 const showSettings = ref(false);
 const showAddFolderName = ref(false);
 const newFolderName = ref('');
@@ -407,6 +420,7 @@ const searchQuery = ref('');
 // Specific folder currently selected in the file explorer tree, tracked for adding folder in that specific spot
 // null is if there is no folder selected on the tree, this by default
 const selectedFolderId = ref<number | null>(null);
+const timeErrorMessage = ref('');
 
 // This type represents the way that we store the note data
 type Note = {
@@ -437,6 +451,7 @@ type Reminder = {
   temporaryTitle: string; 
   isSaved: boolean; 
   titleMessageError?: string; 
+  timeMessageError?: string;
   eventType: number; // id of the event type the reminder is categorized as
   extension: Record<string, string | number | null>; // Essentially extension is a json-like object with string ID/keys and any type values  
   // useful for adding on custom event type fields/extensions that we may not know the types to yet
@@ -563,6 +578,7 @@ function addReminder() {
     temporaryFolderId: null,
     isSaved: false,
     titleMessageError: '', // error message for title validation
+    timeMessageError: '', // error message for time validation
     eventType: 1, // default event type is flight for now (id 1),
     extension: {} as Record<string, string | number | null>// Default no extensions
   });
@@ -646,6 +662,26 @@ function saveReminder(reminder: Reminder){
     reminder.titleMessageError = 'Reminder title cannot be empty.';
     return;
   }
+
+  // Check that arrival time is before departure time for flight event type
+  if (reminder.eventType === 1) { 
+    const arrivalTime = reminder.extension.arrivalTime;
+    const departureTime = reminder.extension.departureTime;
+    // If arrival & departure time are valid and arrival time is after departure time, show error message and disable save button
+    if (arrivalTime && departureTime && arrivalTime >= departureTime) {
+      reminder.timeMessageError = 'Arrival time must be before departure time.';
+      return;
+    }
+    // Check that check-in time is before check-out time for hotel event type
+  } else if (reminder.eventType === 2) { 
+    const checkInTime = reminder.extension.checkInTime;
+    const checkOutTime = reminder.extension.checkOutTime;
+    // If check-in & check-out time are valid and check-in time is after check-out time, show error message and disable save button
+    if (checkInTime && checkOutTime && checkInTime >= checkOutTime) {
+      reminder.timeMessageError = 'Check-in time must be before check-out time.';
+      return;
+    }
+  }
   reminder.title = reminder.temporaryTitle;
   reminder.folderID = reminder.temporaryFolderId;
   // Set reminder to be saved after clicking save button so it can show on tree
@@ -698,6 +734,15 @@ watch(selectAll, (selectionVal) => {
     });
   }
 });
+
+// Watch event type of each reminder
+reminders.value.forEach(reminder => {
+  // Clear error message when switching event types to not confuse users with old fields
+  watch(() => reminder.eventType, () => {
+    reminder.timeMessageError = '';
+  });
+});
+
 
 // template and script source code from mini-mode navigation example
 // https://qcalendar.netlify.app/developing/qcalendar-month-mini-mode#mini-mode-theme
