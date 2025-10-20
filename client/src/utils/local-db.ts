@@ -546,31 +546,39 @@ export async function updateFolder(folderID: number, parentFolderID: number, col
 
 
 // delete
-// itemTable: 0 = notes, 1 = reminder, 2 = daily_reminder, 3 = weekly_reminder, 4 = monthly_reminder, 5 = yearly_reminder
+const notesTable = 11;
+const remindersTable = 12;
+const dailyTable = 21;
+const weeklyTable = 22;
+const monthlyTable = 23;
+const yearlyTable = 24;
+const overridesTable = 31;
+const foldersTable = 32;
+
 export async function deleteItem(itemID: number, itemTable: number) { // used for all but specific extensions and folders
   let deleteOccurred = false;
   switch (itemTable) {
-    case 0: {// note
+    case notesTable: {
       deleteOccurred = await window.sqliteAPI.deleteNote(itemID); // itemID MUST be present
       break;
     }
-    case 1: { // reminder
+    case remindersTable: {
       deleteOccurred = await window.sqliteAPI.deleteReminder(itemID);
       break;
     }
-    case 2: { // daily_reminder
+    case dailyTable: {
       deleteOccurred = await window.sqliteAPI.deleteDailyReminder(itemID);
       break;
     }
-    case 3: { // weekly_reminder
+    case weeklyTable: {
       deleteOccurred = await window.sqliteAPI.deleteWeeklyReminder(itemID);
       break;
     }
-    case 4: { // monthly_reminder
+    case monthlyTable: {
       deleteOccurred = await window.sqliteAPI.deleteMonthlyReminder(itemID);
       break;
     }
-    case 5: { // yearly_reminder
+    case yearlyTable: {
       deleteOccurred = await window.sqliteAPI.deleteYearlyReminder(itemID);
       break;
     }
@@ -588,32 +596,31 @@ export async function deleteExtension(itemID: number, sequenceNum: number) {
   await window.sqliteAPI.deleteExtension(itemID, sequenceNum); // delete an individual extension
 }
 
-// itemTable: 7 = folder
 export async function deleteFolder(folderID: number) {
   if (folderID === 0) return // root folder cannot be deleted
 
   let items = await window.sqliteAPI.readNotesInFolder(folderID);
-  for (const item of items) await deleteItem(item.itemID, 0); // delete all items in the folder
+  for (const item of items) await deleteItem(item.itemID, notesTable); // delete all items in the folder
 
   items = await window.sqliteAPI.readRemindersInFolder(folderID);
-  for (const item of items) await deleteItem(item.itemID, 1);
+  for (const item of items) await deleteItem(item.itemID, remindersTable);
 
   items = await window.sqliteAPI.readDailyRemindersInFolder(folderID);
-  for (const item of items) await deleteItem(item.itemID, 2);
+  for (const item of items) await deleteItem(item.itemID, dailyTable);
 
   items = await window.sqliteAPI.readWeeklyRemindersInFolder(folderID);
-  for (const item of items) await deleteItem(item.itemID, 3);
+  for (const item of items) await deleteItem(item.itemID, weeklyTable);
 
   items = await window.sqliteAPI.readMonthlyRemindersInFolder(folderID);
-  for (const item of items) await deleteItem(item.itemID, 4);
+  for (const item of items) await deleteItem(item.itemID, monthlyTable);
 
   items = await window.sqliteAPI.readYearlyRemindersInFolder(folderID);
-  for (const item of items) await deleteItem(item.itemID, 5);
+  for (const item of items) await deleteItem(item.itemID, yearlyTable);
 
   const subFolders = await window.sqliteAPI.readFoldersInFolder(folderID);
   for (const subFolder of subFolders) await deleteFolder(subFolder.folderID); // recursively delete subfolders
 
-  if (await window.sqliteAPI.deleteFolder(folderID)) await createDeleted(folderID, 7); // finally, delete the folder and create deleted entry
+  if (await window.sqliteAPI.deleteFolder(folderID)) await createDeleted(folderID, foldersTable); // finally, delete the folder and create deleted entry
 }
 
 // helpers
