@@ -31,10 +31,9 @@
  *
  * Authors: Kevin Sirantoine, Rachel Patella, Maria Pasaylo
  * Created: 2025-04-13
- * Updated: 2025-11-07
+ * Updated: 2025-11-09
  *
  * This file exposes APIs to the renderer via the contextBridge.
- *
  *
  * This file is a part of OpenOrganizer.
  * This file and all source code within it are governed by the copyright and license terms outlined in the LICENSE file located in the top-level directory of this distribution.
@@ -128,15 +127,8 @@ contextBridge.exposeInMainWorld('electronStoreAPI', {
   setStoreName: (name: string) => ipcRenderer.invoke('setStoreName', name)
 });
 
-contextBridge.exposeInMainWorld('reminderNotificationAPI', {
-  showReminderNotification: (reminder: { title: string; date: string }) => ipcRenderer.invoke('showReminderNotification', reminder),
-  scheduleReminderNotification: (reminder: { itemID: bigint; date: string; title: string; time?: string; unixMilliseconds?: number }) => ipcRenderer.invoke('scheduleReminderNotification', reminder)
-});
-
 contextBridge.exposeInMainWorld('electronAuthAPI', {
   createAccount: (username: string, password: string) => ipcRenderer.invoke('createAccount', username, password),
   loginAccount: (username: string, password: string) => ipcRenderer.invoke('loginAccount', username, password),
   clearLocalData: () => ipcRenderer.invoke('clearLocalData')
 });
-
-

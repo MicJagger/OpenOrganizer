@@ -37,7 +37,7 @@ export function convertTimeAndDateToTimestamp(dateString: string, timeString: st
   //console.log("Constructed dateTime object:", dateTime);
   // Parse date object into a qcalendar timestamp
   const timeStamp = parseDate(dateTime);
- // console.log("Converted Timestamp:", timeStamp);
+  //console.log("Converted Timestamp:", timeStamp);
   // Return object that has all timestamp fields plus original date for UI rendering
   return {
   ...timeStamp,

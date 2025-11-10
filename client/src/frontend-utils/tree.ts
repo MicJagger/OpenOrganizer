@@ -75,6 +75,31 @@ export function convertFolderTreetoQTree(folders: UIFolder[], notes: UINote[], r
   });
 }
 
+// Builds root note/reminder nodes (since root folder isnt visually represented in the tree)
+export function buildRootNodes(folders: UIFolder[],notes: UINote[], reminders: UIReminder[]): QTreeFolder[] {
+  // Build nested folder tree
+  const nestedTree = nest(folders, 0n);
+
+  // Convert nested folders to qtree nodes
+  const folderNodes = convertFolderTreetoQTree(nestedTree, notes, reminders);
+
+  // Find reminder and note root nodes (parent folder ID = 0) and map to QTree format
+  const rootNoteNodes = notes.filter(note => note.isSaved && note.folderID === 0n).
+  map(note => ({
+    label: note.title,
+    id: -note.itemID,
+  }));
+
+  const reminderRootNodes = reminders.filter(reminder => reminder.isSaved && reminder.folderID === 0n).
+  map(reminder => ({
+    label: reminder.title,
+    id: -reminder.itemID,
+  }));
+
+  // Render root items first then folders
+  return [...rootNoteNodes, ...reminderRootNodes, ...folderNodes];
+}
+
 // Function to normalize selected node to be folderID for breadcrumb trail navigation 
 // Needed to distinguish because notes/reminders are selectable children with negative IDs in the tree
 export function normalizeFolderID(selectedNode: bigint | null, notes: UINote[], reminders: UIReminder[], folders: UIFolder[]): bigint | null {
@@ -120,28 +145,36 @@ return null;
 export function buildBreadcrumbs(selectedNode: bigint | null, folders: UIFolder[], notes: UINote[], reminders: UIReminder[]): { label: string; id: bigint }[] {
   // Normalize currently selected folder ID on QTree
   const currentFolderID = normalizeFolderID(selectedNode, notes, reminders, folders);
-  // Empty path if there is no currently selected folder
-  if (currentFolderID == null) {
-    return [];
+  // If no folder is currently selected, or the selected folder is DB root itself, show root label breadcrumb
+  if (currentFolderID == null || currentFolderID === 0n) {
+    return [{label: 'root', id: 0n}];
   }
+
   // Initialize empty path array
   const path: { label: string; id: bigint }[] = [];
-
   let currentID: bigint | null = currentFolderID;
 
-  // While a folder is selected, walk up the tree to build the path
-  while (currentID != null) {
+  // While a folder is selected and not root, walk up the tree to build the path
+  while (currentID != null && currentID != 0n) {
     // Find folder in folders array that matches the current folder ID
     const current = folders.find(folder => folder.folderID === currentID);
+    // No current folder found, stop walking
+    if (!current) break;
     // If current folder is valid, add it to the path
-    if (current) {
-      path.push({ label: current.folderName, id: current.folderID });
-      // Update currentID to be the parent folder ID for the next iteration
-      // parentFolderID === -1n means root
-      currentID = current.parentFolderID === -1n ? null : current.parentFolderID;
-    } else {
-      break;
+    path.push({ label: current.folderName, id: current.folderID });
+    // Update currentID to be the parent folder ID for the next iteration
+    currentID = current.parentFolderID;
+
+    // If we reach the root folder, manually add the root folder to the path and stop walking
+    // This is because it is not visually represented in the tree, just in the DB
+    if (current.parentFolderID === 0n) {
+       const root = folders.find(folder => folder.folderID === 0n);
+       if (root) {
+         path.push({ label: root.folderName, id: root.folderID });
+         break;
+       }
     }
+
   }
   // Reverse the path so visually it goes from root to selected folder
   return path.reverse();

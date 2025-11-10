@@ -1,7 +1,7 @@
 <!--
- * Authors: Rachel Patella, Maria Pasaylo
+ * Authors: Rachel Patella, Maria Pasaylo, Michael Jagiello
  * Created: 2025-09-22
- * Updated: 2025-10-30
+ * Updated: 2025-11-08
  *
  * This file is the main home page that includes the calendar view, notes/reminders list, 
  * and a file explorer as a 3 column grid layout.
@@ -33,13 +33,13 @@
           <div class="text-h6">Settings</div>
           <div class="settings-container">
             <div class="settings-sidebar">
-              <q-tabs v-model="tab" vertical>
+              <q-tabs v-model="settingsTab" vertical>
                 <q-tab style="color: #474747" name="cloud" label="Cloud" icon="cloud" />
                 <q-tab style="color: #474747" name="local" label="Local" icon="storage" />
               </q-tabs>
             </div>
-            <div v-if="tab === 'cloud'">
-              <q-toggle style="size:2px; font-size:18px" v-model="isCloudOn" label="Cloud Sync" />
+            <div v-if="settingsTab === 'cloud'">
+              <q-toggle style="size:2px; font-size:18px" v-model="isCloudOn" label="Cloud Sync" @update:model-value="onToggleCloudSync" :disable="isSyncing"/>
             </div>
           </div>
         </q-card-section>
@@ -52,7 +52,7 @@
         v-model="searchQuery"
         dense
         outlined
-        placeholder="Search notes here..."
+        placeholder="Search notes and reminders by title here..."
         class="search-input"
       >
         <template v-slot:prepend>
@@ -143,8 +143,8 @@
      
       <!-- Left column - File Explorer bottom row-->
       <div style="grid-area: file-explorer-cloud; padding: 20px 30px; display: flex; border-top: 1px solid #adadadcc; align-items: center; gap: 8px;" data-area="file-explorer-cloud">
-        <div style="color: #474747; font-size: 1.15rem;">Cloud Not Synced</div>
-        <q-icon name="cloud_off" size="20px" style="color: #474747" />
+        <div style="color: #474747; font-size: 1.15rem;">{{  syncStatusMessage }} </div>
+        <q-icon :name="cloudIcon" size="20px" style="color: #474747" />
       </div>
       
     <!-- Middle column - List View of Notes/Reminders -->
@@ -182,6 +182,10 @@
                     </div>
               </template>
               <q-card-section>
+                    <div style="padding-bottom:10px">
+                      Event date: {{ item.date }}<br>
+                      Last modified: {{(item.temporaryLastModified) }}
+                    </div>
                 <q-select
                 v-model="item.eventType"
                 :options="eventTypeOptions"
@@ -292,6 +296,9 @@
               </template>
               <!-- Emit-value makes it so the dropdown option only saves the value (ex. folder id = 1 rather than the whole object {folder: name, id, etc.}) -->
               <q-card-section>
+                      <div style="padding-bottom:10px">
+                      Last modified: {{ item.temporaryLastModified }}
+                    </div>
                 <q-select
                 v-model="item.temporaryFolderID"
                 :options="folderDropdownOptions"
@@ -353,6 +360,7 @@
                 <div
                   :class="['text-white', `bg-${event.color}`, 'row', 'justify-start', 'items-center', 'no-wrap', 'event-card']"
                   style="width: 100%; margin: 1px 0 0 0; padding: 0 2px; font-size: 12px; cursor: pointer;"
+                  @click="onClickCalendarEvent(event)"
                 >
                   <div class="event-title" style="width: 100%; max-width: 100%;">
                   {{ event.title }}
@@ -383,18 +391,21 @@
 <script setup lang="ts">
 import {QCalendarMonth, addToDate, parseTimestamp, today, type Timestamp} from '@quasar/quasar-ui-qcalendar';
 import '@quasar/quasar-ui-qcalendar/index.css';
-import {buildCalendarEvents, groupEventsByDate, getEventTypeColor, getEventTypeFields, getEventStartLabel, getEventEndLabel, type EventType} from '../frontend-utils/events';
-import {nest, buildBreadcrumbs, convertFolderTreetoQTree, normalizeFolderID} from '../frontend-utils/tree';
+import {buildCalendarEvents, groupEventsByDate, getEventTypeColor, getEventTypeFields, getEventStartLabel, getEventEndLabel, type EventType, type CalendarEvent} from '../frontend-utils/events';
+import { buildBreadcrumbs, normalizeFolderID, buildRootNodes} from '../frontend-utils/tree';
 import { convertTimeAndDateToTimestamp, convertNotificationTimestamp, timeStamptoEpoch, timestampToTimeString, minutesToHHMM } from '../frontend-utils/time';
 import { ref, computed, watch, onMounted } from 'vue';
 import type { UINote, UIReminder, UIFolder } from '../types/ui-types';
-import type { Note, Reminder, Folder } from '../../src-electron/types/shared-types';
+import type { Reminder, Note, Folder } from '../../src-electron/types/shared-types';
 import {createNote, createReminder, createFolder, createRootFolder, readNote, readReminder, readAllFolders, updateNote, updateReminder, updateFolder, deleteItem, deleteFolder, readRemindersInRange, readNotesInRange} from '../utils/local-db';
-
 // Initialize active tab to reminder by default
 const tab = ref('reminders');
-// Array of reminders. 
+const settingsTab = ref('cloud');
+// Array of reminders 
 const reminders = ref<UIReminder[]>([])
+// Array of reminders by month for calendar
+const monthReminders = ref<UIReminder[]>([])
+
 // List of notification options for when to be notified for reminder
 // Value is minutes before the event start time
 const notificationOptions = [
@@ -476,6 +487,59 @@ const eventTypeOptions = computed(() => {
 
 const showSettings = ref(false);
 const isCloudOn = ref(false);
+const isSyncing = ref(false);
+const syncStatusMessage = ref('Cloud Not Synced')
+
+// Function to handle toggling cloud sync on/off
+async function onToggleCloudSync() {
+  if (!isCloudOn.value) {
+    return;
+  }
+
+  // If already syncing, dont start another sync
+  if (isSyncing.value) {
+    return;
+  }
+
+  // Was not syncing, start sync
+  isSyncing.value = true;
+  syncStatusMessage.value = 'Syncing...';
+
+  try {
+    await window.syncAPI.sync();
+    syncStatusMessage.value = 'Cloud Synced Successfully';
+    console.log('Cloud sync completed successfully');
+  } catch (error) {
+    syncStatusMessage.value = 'Cloud Sync Failed';
+    console.error('Error during cloud sync:', error);
+   // Incase of error, reset sync status
+  } finally {
+    isSyncing.value = false;
+  }
+}
+
+// Change icon depending on cloud sync status
+const cloudIcon = computed(() => {
+  // Cloud toggle is off
+  if (!isCloudOn.value) {
+    return 'cloud_off'
+  }
+  // Currently syncing
+  if (isSyncing.value) {
+    return 'cloud_sync'
+  }
+  // Sync successful
+  if (syncStatusMessage.value === 'Cloud Synced Successfully') {
+    return 'cloud_done'
+  }
+  // Sync failed
+  if (syncStatusMessage.value === 'Cloud Sync Failed') {
+    return 'cloud_off'
+  }
+  // Default
+  return 'cloud'
+})
+
 const selectAll = ref(false)
 const searchQuery = ref('');
 // Specific folder ID currently selected in the file explorer tree, tracked for adding folder in that specific spot
@@ -552,7 +616,9 @@ function handleTreeSelection(newlySelectedNode: bigint | null) {
         tab.value='reminders';
         // Set date to reminder date on calendar
         selectedDate.value = reminder.date;
-        // Expand the reminder card 
+        // Collapse all other reminders except the selected entry
+        reminders.value.forEach(reminder =>  {reminder.expanded = false; })
+        // Expand the selected reminder card 
         reminder.expanded = true;
         return;
       }
@@ -560,7 +626,9 @@ function handleTreeSelection(newlySelectedNode: bigint | null) {
       const note = notes.value.find(note => String(note.itemID) === String(itemID));
       if (note) {
         tab.value='notes';
-        // Expand the note card
+        // Collapse all other notes except the selected entry
+        notes.value.forEach(note =>  {note.expanded = false; })
+        // Expand the selected note card
         note.expanded = true;
         return;
       }
@@ -631,12 +699,9 @@ function cancelRename(item: UIReminder | UINote | UIFolder) {
   }
 }
 
-// Create nested folder tree structure from flat folders array
-const nestedFolderTree = computed(() => nest(folders.value, -1n));
-
 // Convert nested folder tree to Q-Tree format
 // Computed since it relies on nestedFolderTree, so it automatically updates whenever the nested folder tree updates
-const qNestedTree = computed(() => convertFolderTreetoQTree(nestedFolderTree.value, notes.value, reminders.value));
+const qNestedTree = computed(() => buildRootNodes(folders.value, notes.value, reminders.value));
 
 // Computed breadcrumbs array that walks from the selected folder up to the root to build the path
 const breadcrumbs = computed(() => buildBreadcrumbs(selectedFolderID.value, folders.value, notes.value, reminders.value))
@@ -666,6 +731,7 @@ function addReminder() {
     temporaryNotificationTime: null,
     temporaryEventStartTime: '',
     temporaryEventEndTime: '',
+    temporaryLastModified: new Date().toLocaleString(),
     temporaryTitle: '',
     temporaryFolderID: folderID,
     date: selectedDate.value,
@@ -701,7 +767,7 @@ async function loadRemindersForCalendarDate(dateString: string) {
     const rows = await readRemindersInRange(startOfDay, endOfDay);
     // Convert each reminder in range from response to UI reminder format 
     for (const reminder of rows) {
-      await mapDBToUIReminder(reminder.itemID);
+      mapDBToUIReminder(reminder, true);
     }
     // console.log('Reminders for date loaded successfully:');
   } catch (error) {
@@ -709,51 +775,88 @@ async function loadRemindersForCalendarDate(dateString: string) {
   }
 }
 
-// Function to display all reminders (essentially a select ALL * from reminders table)
-async function loadAllReminders() {
-    // Compute timestamp for minimum and maximum dates (wide range to cover all DB entries)
-    // Far into past and far into future (100 years)
-    const start = convertTimeAndDateToTimestamp('1900-01-01', '')
-    const end = convertTimeAndDateToTimestamp('2125-12-31', '23:59')
+// Function to display reminders for selected month on calendar
+// Pass in calendar string YYYY-MM-DD
+async function loadRemindersForMonth(dateString: string) {
+  // Split date string by delimiter '-' to get each part (year, month, day)
+  const [yearString, monthString, dayString] = dateString.split('-');
+  const year = Number(yearString);
+  const month = Number(monthString);
+  const day = Number(dayString);
+
+  // Check for invalid month
+  if (month < 1 || month > 12) {
+    console.error('Invalid month value:', month);
+    return;
+  }
+
+  // Check for invalid day
+  if (day < 1 || day > 31) {
+    console.error('Invalid day value:', day);
+    return;
+  }
+
+  // Check for invalid year
+  if (year < 1) {
+    console.error('Invalid year value:', year);
+    return;
+  }
+
+  // Build start and end timestamps to load in range (from first day to last day of month)
+  // First day of the month - ex. 2025-11-01
+  const startDayOfMonth= `${year}-${String(month).padStart(2, '0')}-01`;
+  // Last day of the month - ex. 2025-11-30
+  // Date returns the day before the first day of the next month (always the last day - ex. 30 for Nov, 31 for Dec, 28 for Feb)
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const lastDayString = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+
+  // Convert to qcalendar timestamps
+  const startRange = convertTimeAndDateToTimestamp(startDayOfMonth, '');
+  const endRange = convertTimeAndDateToTimestamp(lastDayString, '23:59');
 
   try {
-    // Clear list before reloading
-    reminders.value = [];
-    // Read all reminders from local DB
-    const rows = await readRemindersInRange(start, end);
+    // Reload monthReminders for calendar 
+    monthReminders.value = [];
+    const rows = await readRemindersInRange(startRange, endRange);
+    const requestedYM = `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}`;
     // Convert each reminder in range from response to UI reminder format 
     for (const reminder of rows) {
-      await mapDBToUIReminder(reminder.itemID);
+      // Update reminders list
+      const result = mapDBToUIReminder(reminder, false);
+      // Extra check to only include items whos month match the calendar month
+        if (result.date && result.date.startsWith(requestedYM)) {
+          // push into monthReminders so the calendar uses these events
+          monthReminders.value.push(result);
+        }
+        // console.log('Reminders for month successfully loaded:');
+      }
+    } catch (error) {
+    console.error('Error loading reminders for month:', error);
+  } 
+}
+
+// grabs all reminders created from the provided year, the previous and the next year
+// if no year is provided, uses the current year
+async function loadReminders(year?: number) {
+  if (year == undefined) year = new Date().getFullYear();
+  const currentYear = year;
+  const lastYear = (currentYear == 1) ? -1 : currentYear - 1;
+  const nextYear = (currentYear == -1) ? 1 : currentYear + 1;
+  const start = convertTimeAndDateToTimestamp(lastYear.toString() + '-01-01', '');
+  const end = convertTimeAndDateToTimestamp(nextYear.toString() + '-12-31', '23:59');
+  try {
+    // clear list before reloading
+    reminders.value = [];
+    const rows = await readRemindersInRange(start, end);
+    // convert each note in range from response to UI note format
+    for (const reminder of rows) {
+      await mapDBToUIReminder(reminder, true);
     }
-    // Sort reminders alphabetically by title for tree 
+    // sort reminders alphabetically by title for tree 
     reminders.value.sort((a, b) => {return String(a.temporaryTitle ?? a.title ?? '').toLowerCase().localeCompare(String(b.temporaryTitle ?? b.title ?? '').toLowerCase());});
     // console.log('All reminders loaded successfully:');
   } catch (error) {
-    console.error('Error loading all reminders:', error);
-  }
-}
-
-// Function to display all notes (essentially a select ALL * from notes table)
-async function loadAllNotes() {
-    // Compute timestamp for minimum and maximum dates (wide range to cover all DB entries)
-    // Far into past and far into future (100 years)
-    const start = convertTimeAndDateToTimestamp('1900-01-01', '')
-    const end = convertTimeAndDateToTimestamp('2125-12-31', '23:59')
-
-  try {
-    // Clear list before reloading
-    notes.value = [];
-    // Read all notes from local DB
-    const rows = await readNotesInRange(start, end);
-    // Convert each note in range from response to UI note format
-    for (const note of rows) {
-      await mapDBToUINote(note.itemID);
-    }
-    // Sort notes alphabetically by title for tree 
-    notes.value.sort((a, b) => {return String(a.temporaryTitle ?? a.title ?? '').toLowerCase().localeCompare(String(b.temporaryTitle ?? b.title ?? '').toLowerCase());});
-    // console.log('All notes loaded successfully:');
-  } catch (error) {
-    console.error('Error loading all notes:', error);
+    console.error('Error loading reminders:', error);
   }
 }
 
@@ -770,6 +873,7 @@ function addNote() {
     title: '',
     temporaryTitle: '',
     temporaryFolderID: folderID,
+    temporaryLastModified: new Date().toLocaleString(),
     text: '',
     temporaryText: '',
     date: selectedDate.value,
@@ -813,18 +917,9 @@ async function addRootFolder() {
   }
 }
   
-
 // Map a DB reminder row into the UI reminder shape needed for card display
-async function mapDBToUIReminder(itemID: number | bigint): Promise<UIReminder | null> {
-  // Convert incoming item ID to bigint 
-  const bigintID: bigint = (typeof itemID === 'bigint') ? itemID : BigInt(itemID);
-
-  // Read newly created reminder from local DB
-  const row = await readReminder(bigintID);
-  if (!row) {
-    console.error('Reminder not found in DB for itemID:', itemID);
-    return null;
-  }
+// Additional upsert parameter decides whether to add/update the global reminders array
+function mapDBToUIReminder(row: Reminder, upsert: boolean): UIReminder {
   // Create a date in local timezone from DB row for UI so filtered reminder/note list only shows entries whose event date match the calendar date
   // Get minute of day, event day, and event year from DB row
   const minuteOfDay = Number(row.eventStartMin);
@@ -845,6 +940,13 @@ async function mapDBToUIReminder(itemID: number | bigint): Promise<UIReminder | 
   // getMonth returns zero-based index add 1 to get actual month number
   // Pad month and day so its always two digits - ex. day 5 becomes 05
   const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+  // Get last modified and convert for display
+  const lastModifiedEpoch = Number(row.lastModified);
+  const reminderDate = new Date(lastModifiedEpoch);
+  // YYYY-MM-DD string format compatible with qcalendar/selectedDate
+  // getMonth returns zero-based index so add 1 to get actual month number
+  const lastModifiedTimeAndDate = reminderDate.toLocaleString();
 
   // Add extension onto reminder row type at compile time
   const typedRow = row as Reminder & { extension?: Record<string, string | number | null> };
@@ -879,6 +981,7 @@ async function mapDBToUIReminder(itemID: number | bigint): Promise<UIReminder | 
     temporaryEventEndTime: endStr,
     // If theres a notification, temporary notification time is reminder notification minute of day 
     temporaryNotificationTime: minutesBeforeStartTime,
+    temporaryLastModified: lastModifiedTimeAndDate,
     date: dateString,
     titleMessageError: '',
     folderMessageError: '',
@@ -889,17 +992,19 @@ async function mapDBToUIReminder(itemID: number | bigint): Promise<UIReminder | 
     expanded: true,
   } as UIReminder;
 
-  // Compute index for a reminder for card display, use itemID as unique index
-  // Look for existing reminder in reminders array that matches the itemID of the newly created reminder
-  const index = reminders.value.findIndex(reminder => String(reminder.itemID) === String(UIReminder.itemID));
-  if (index >= 0) {
+  // If true, update (if existing) or insert (if not) UI reminder into global reminders array
+  if (upsert) {
+    // Compute index for a reminder for card display, use itemID as unique index
+    // Look for existing reminder in reminders array that matches the itemID of the converted reminder
+    const index = reminders.value.findIndex(reminder => String(reminder.itemID) === String(UIReminder.itemID));
+    if (index >= 0) {
     // If found, replace preexisting reminder in array with new UI object
     reminders.value[index] = UIReminder;
   } else {
     // If not found, add new UI object reminder to the array
     reminders.value.push(UIReminder);
   }
-
+}
   return UIReminder;
 }
 
@@ -923,21 +1028,19 @@ function mapDBToUIFolder(rows: Folder[]): UIFolder[] {
   // Normalize to lowercase so the sorting is case-insensitive
   row.sort((a, b) => String(a.folderName ?? '').toLowerCase().localeCompare(String(b.folderName ?? '').toLowerCase()));
   return row;
-
 }
 
-async function mapDBToUINote(itemID: number | bigint): Promise<UINote | null> {
-  // Convert incoming id to bigint for DB API which expects bigint
-  const bigintID: bigint = (typeof itemID === 'bigint') ? itemID : BigInt(itemID);
-
-  // Read newly created note from local DB
-  const row = await readNote(bigintID);
-  if (!row) {
-    console.error('Note not found in DB for itemID:', itemID);
-    return null;
-  }
-  
-  const date = selectedDate.value;
+// Function to map a DB note row into the UI note shape needed for card display
+function mapDBToUINote(row: Note, upsert: boolean): UINote {
+  // Create a date from the lastModified timestamp for UI
+  // cast to number for date operations
+  const lastModifiedEpoch = Number(row.lastModified);
+  const noteDate = new Date(lastModifiedEpoch);
+  // YYYY-MM-DD string format compatible with qcalendar/selectedDate
+  // getMonth returns zero-based index so add 1 to get actual month number
+  const dateString = `${noteDate.getFullYear()}-${String(noteDate.getMonth() + 1).padStart(2, '0')}-${String(noteDate.getDate()).padStart(2, '0')}`;
+  // For display
+  const lastModifiedTimeAndDate = noteDate.toLocaleString();
 
   // Need to add fields to the DB note row specific to the UI card
   // Sets temporary fields to saved values from DB
@@ -949,7 +1052,8 @@ async function mapDBToUINote(itemID: number | bigint): Promise<UINote | null> {
     temporaryFolderID: row.folderID == null ? null : ((typeof row.folderID === 'bigint') ? row.folderID : BigInt(row.folderID)),
     temporaryTitle: row.title ?? '',
     temporaryText: row.text ?? '',
-    date,
+    date: dateString,
+    temporaryLastModified: lastModifiedTimeAndDate,
     titleMessageError: '',
     folderMessageError: '',
     isSaved: true,
@@ -958,9 +1062,10 @@ async function mapDBToUINote(itemID: number | bigint): Promise<UINote | null> {
     expanded: true,
   } as UINote;
 
-  // Compute index for a note for card display, use itemID as unique index
-  // Look for existing note in notes array that matches the itemID of the newly created note
-  const index = notes.value.findIndex(note => String(note.itemID) === String(UINote.itemID));
+  if (upsert) {
+    // Compute index for a note for card display, use itemID as unique index
+    // Look for existing note in notes array that matches the itemID of the newly created note
+    const index = notes.value.findIndex(note => String(note.itemID) === String(UINote.itemID));
   if (index >= 0) {
     // If found, replace preexisting note in array with new UI object
     notes.value[index] = UINote;
@@ -968,8 +1073,35 @@ async function mapDBToUINote(itemID: number | bigint): Promise<UINote | null> {
     // If not found, add new UI object note to the array
     notes.value.push(UINote);
   }
+}
 
   return UINote;
+}
+
+// grabs all notes created from the provided year, the previous and the next year
+// if no year is provided, uses the current year
+async function loadNotes(year?: number) {
+  if (year == undefined) year = new Date().getFullYear();
+  const currentYear = year;
+  const lastYear = (currentYear == 1) ? -1 : currentYear - 1;
+  const nextYear = (currentYear == -1) ? 1 : currentYear + 1;
+  const start = convertTimeAndDateToTimestamp(lastYear.toString() + '-01-01', '');
+  const end = convertTimeAndDateToTimestamp(nextYear.toString() + '-12-31', '23:59');
+  try {
+    // clear list before reloading
+    notes.value = [];
+    const rows = await readNotesInRange(start, end);
+    // convert each note in range from response to UI note format
+    for (const note of rows) {
+      await mapDBToUINote(note, true);
+    }
+    // sort notes alphabetically by title for tree
+    notes.value.sort((a, b) => {
+      return String(a.temporaryTitle ?? a.title ?? '').toLowerCase().localeCompare(String(b.temporaryTitle ?? b.title ?? '').toLowerCase());
+    });
+  } catch (error) {
+    console.error('Error loading notes:', error);
+  }
 }
 
 onMounted(async () => {
@@ -977,19 +1109,25 @@ onMounted(async () => {
   await addRootFolder();
   // Ensure folders array is populated from local DB on page load
   folders.value = mapDBToUIFolder(await readAllFolders());
-  // Load all reminders and notese so tree shows every item
-  await loadAllReminders();
-  await loadAllNotes();
+  // Load all reminders and notes so tree shows every item
+  await loadReminders();
+  await loadNotes();
   // Load reminders for selected calendar date on startup for tab list
   await loadRemindersForCalendarDate(selectedDate.value);
-});
+  // Load reminders for the visible month for calendar events
+  await loadRemindersForMonth(selectedDate.value);
+  // Since sync initiates on startup, set cloud toggle to on
+  isCloudOn.value = true;
+  // Start initial sync on app load
+  await onToggleCloudSync();
+  });
 
 // Function to add a folder to the tree
 function addFolder() {
    // create a UI-only draft folder with a temporary negative bigint ID
   const tempID = tempIDCounter--;
-  // Sets parentFolderID of new folder to currently selected folder in file explorer tree. If no folder is selected, add new folder to root (parentFolderID = -1)
-  const newParentFolderID = normalizeFolderID(selectedFolderID.value, notes.value, reminders.value, folders.value) ?? -1n;
+  // Sets parentFolderID of new folder to currently selected folder in file explorer tree. If no folder is selected, add new folder to root (parentFolderID = 0)
+  const newParentFolderID = normalizeFolderID(selectedFolderID.value, notes.value, reminders.value, folders.value) ?? 0n;
 
   const draft: UIFolder = {
     folderID: tempID,
@@ -1020,7 +1158,7 @@ async function saveFolder(folder: UIFolder){
   try {
     // First time is a draft folder, create new folder in local DB
     if (!folder.isSaved) {
-      const newParentFolderID = normalizeFolderID(folder.parentFolderID ?? selectedFolderID.value, notes.value, reminders.value, folders.value) ?? -1n;
+      const newParentFolderID = normalizeFolderID(folder.parentFolderID ?? selectedFolderID.value, notes.value, reminders.value, folders.value) ?? 0n;
       const folderID: bigint = await createFolder(newParentFolderID, -1, folder.temporaryFolderName);
       folders.value = mapDBToUIFolder(await readAllFolders());
       selectedFolderID.value = folderID;
@@ -1065,22 +1203,29 @@ async function saveNote(note: UINote){
     note.itemID = itemID;
 
     // Map DB row into UI and update notes.value array
-    await mapDBToUINote(note.itemID);
+    const row = await readNote(note.itemID); 
+    if (row) {
+      mapDBToUINote(row, true);
+    } 
     // Refresh folders to show newly added note in file explorer tree
     folders.value = mapDBToUIFolder(await readAllFolders());
     // Reload notes to include newly added note
-    await loadAllNotes();
+    await loadNotes();
   }
   else {
       await updateNote(note.itemID, note.temporaryFolderID, note.temporaryTitle, note.temporaryText);
       console.log('Note successfully updated:', note.itemID);
 
       // Map DB row into UI and update notes.value array
-      await mapDBToUINote(note.itemID);
+      const row = await readNote(note.itemID); 
+      if (row) {
+        mapDBToUINote(row, true);
+      } 
+
       // Reload folders to see updated note in file tree
       folders.value = mapDBToUIFolder(await readAllFolders());
       // Reload notes to see updated note card
-      await loadAllNotes();
+      await loadNotes();
   }
  } catch (error) {
     console.error('Error saving note:', error);
@@ -1143,42 +1288,39 @@ try {
   const itemID = await createReminder(reminder.temporaryFolderID, reminder.eventType, eventStartTime, eventEndTime, notificationTimestampToSend, hasNotification, reminder.temporaryTitle);
   console.log('Reminder successfully created:', itemID);
 
-  // Give this new reminder the actual itemID assigned by the DB and mark it saved so future saves go to update
-  reminder.itemID = itemID;
+  // Fetch the newly created reminder from the DB 
+  const row = await readReminder(itemID);
 
   // Map DB row into UI and update reminders.value array
-  await mapDBToUIReminder(reminder.itemID);
+  if (row) {
+    mapDBToUIReminder(row, true);
+  }
 
   folders.value = mapDBToUIFolder(await readAllFolders());
   await loadRemindersForCalendarDate(selectedDate.value);
 
-  if (hasNotification) {
-    // Convert notification to epoch for scheduling
-    const unixNotifTime = timeStamptoEpoch(notificationTimestampToSend);
-    // Schedule notification
-    await window.reminderNotificationAPI.scheduleReminderNotification({itemID: itemID, date: reminder.date, title: reminder.temporaryTitle, time: notifToDisplay, unixMilliseconds: unixNotifTime,
-    });
+  // Reload calendar month to include newly added reminder
+  await loadRemindersForMonth(selectedDate.value);
   }
-}
   // Reminder is saved, just updating a preexisting reminder
   else {
       await updateReminder(reminder.itemID, reminder.temporaryFolderID, reminder.eventType, eventStartTime, eventEndTime, notificationTimestampToSend, hasNotification, reminder.temporaryTitle);
       console.log('Reminder updated successfully in DB.');
 
+      // Fetch the newly created reminder from the DB 
+      const row = await readReminder(reminder.itemID);
+
       // Map DB row into UI and update reminders.value array
-      await mapDBToUIReminder(reminder.itemID);
+      if (row) {
+        mapDBToUIReminder(row, true);
+      }
+
       // Refresh folders to show newly added reminder in file explorer tree
       folders.value = mapDBToUIFolder(await readAllFolders());
       // Reload reminders for selected calendar date to include newly added reminder
       await loadRemindersForCalendarDate(selectedDate.value);
-
-      if (hasNotification) {
-        // Convert notification to epoch for scheduling
-        const unixNotifTime = timeStamptoEpoch(notificationTimestampToSend);
-        // Schedule notification
-        await window.reminderNotificationAPI.scheduleReminderNotification({itemID: reminder.itemID, date: reminder.date, title: reminder.temporaryTitle, time: notifToDisplay, unixMilliseconds: unixNotifTime,
-        });
-      }
+      // Reload calendar month to include updated reminder
+      await loadRemindersForMonth(selectedDate.value);
   }
   } catch (error) {
     console.error('Error adding reminder:', error);
@@ -1196,8 +1338,10 @@ async function deleteReminder(reminder: UIReminder) {
     console.log('Reminder deleted successfully from DB.');
     // Refresh folders for tree to remove deleted reminder
     folders.value = mapDBToUIFolder(await readAllFolders());
-    // Re-load reminders for calendar date after deleted reminder
+    // Reload reminders for calendar date after deleted reminder
     await loadRemindersForCalendarDate(selectedDate.value);
+    // Reload calendar month to include updated reminder
+    await loadRemindersForMonth(selectedDate.value);
 
   } catch (error) {
     console.error('Error deleting reminder from DB:', error);
@@ -1219,7 +1363,7 @@ async function deleteNote(note: UINote) {
     // Refresh folders for tree to remove deleted note
     folders.value = mapDBToUIFolder(await readAllFolders());
     // Re-load notes after deleted note
-    await loadAllNotes();
+    await loadNotes();
   } catch (error) {
     console.error('Error deleting note from DB:', error);
   }
@@ -1247,7 +1391,7 @@ async function deleteTreeNode() {
           await deleteFolder(folderToDelete.folderID);
           folders.value = mapDBToUIFolder(await readAllFolders());
           await loadRemindersForCalendarDate(selectedDate.value);
-          await loadAllNotes();
+          await loadNotes();
           // Clear tree node selection after deletion
           selectedFolderID.value = null;
         } catch (error) {
@@ -1269,7 +1413,7 @@ async function deleteTreeNode() {
         // Remove deleted note from notes array for UI rendering
         notes.value = notes.value.filter(note => String(note.itemID) !== String(noteToDelete.itemID));
         folders.value = mapDBToUIFolder(await readAllFolders());
-        await loadAllNotes();
+        await loadNotes();
         // Clear tree node selection after deletion
         selectedFolderID.value = null;
       } catch (error) {
@@ -1333,8 +1477,10 @@ async function cancelReminder(reminder: UIReminder) {
     await loadRemindersForCalendarDate(selectedDate.value);
   // Reminder is saved, revert temporary fields back to saved database values
   } else {
-    // Reload DB row of reminder and restore fields
-    await mapDBToUIReminder(reminder.itemID);
+    const row = await readReminder(reminder.itemID); 
+    if (row) {
+      mapDBToUIReminder(row, true);
+    } 
   }
 }
 
@@ -1344,11 +1490,14 @@ async function cancelNote(note: UINote) {
   if (!note.isSaved) {
     notes.value = notes.value.filter(n => String(n.itemID) !== String(note.itemID));
     // Reload note list
-    await loadAllNotes();
+    await loadNotes();
   // Note is saved, revert temporary fields back to saved database values
   } else {
     // Reload DB row of note and restore fields
-    await mapDBToUINote(note.itemID);
+    const row = await readNote(note.itemID);
+    if (row) {
+      mapDBToUINote(row, true);
+    }
   }
 }
 
@@ -1386,9 +1535,24 @@ const formattedMonth = computed(() => {
   return formatter ? formatter.format(date) : ''
 })
 
-// Filtered reminder array for specific date
+// Filtered reminder array for displaying only reminders that match the selected calendar date or search query
 const filteredReminders = computed(() => {
-  return reminders.value.filter(reminder => reminder.date === selectedDate.value)
+  //return reminders.value.filter(reminder => reminder.date === selectedDate.value)
+  // Normalize search query: remove whitespace and convert to lowercase for case-insensitive matching
+  // Search functionality example: https://stackoverflow.com/questions/74670957/how-to-display-search-results-using-react-typescript
+  const query = (searchQuery.value ?? '').trim().toLowerCase();
+  if (!searchQuery.value) {
+    // If no search query, default show reminders for selected calendar date
+    return reminders.value.filter(reminder => reminder.date === selectedDate.value);
+  }
+
+  // Otherwise, filter reminders based on the search query (title)
+  return reminders.value.filter(reminder => {
+    // Check for reminders entries where the title is in the search query
+    const matchesQuery = String(reminder.temporaryTitle ?? '').toLowerCase().includes(query) || String(reminder.title ?? '').toLowerCase().includes(query);
+    // Return true if both date and query match
+    return matchesQuery;
+  });
 });
 
 // Reload list of reminders whenever the selected calendar date changes
@@ -1398,14 +1562,41 @@ watch(selectedDate, async (newDate) => {
 });
 
 // Create events on calendar from reminders
-const events = computed(() => buildCalendarEvents(reminders.value, eventTypes))
+const events = computed(() => buildCalendarEvents(monthReminders.value, eventTypes))
 // Group events by date
 const eventsMap = computed(() => groupEventsByDate(events.value))
 
-// Notes not connected to calendar dates, so just show notes array as is
+// If user clicks calendar event, route to that reminder entry
+function onClickCalendarEvent(event: CalendarEvent) {
+  // Find reminder that matches event
+  const reminder = reminders.value.find(reminder => String(reminder.itemID) === String(event.id));
+  if (!reminder) {
+    return;
+  } 
+  tab.value = 'reminders';
+  selectedDate.value = reminder.date;
+  reminders.value.forEach(reminder => { reminder.expanded = false; })
+  reminder.expanded = true;
+}
+
+// Filtered notes array for displaying only notes that match the search query
 const filteredNotes = computed(() => {
-  return notes.value
-});
+  // Normalize search query: remove whitespace and convert to lowercase for case-insensitive matching
+  // Search functionality example: https://stackoverflow.com/questions/74670957/how-to-display-search-results-using-react-typescript
+  const query = (searchQuery.value ?? '').trim().toLowerCase();
+  if (!searchQuery.value) {
+    // If no search query, default show all the notes
+    return notes.value;
+  }
+
+  // Otherwise, filter notes based on the search query (title)
+  return notes.value.filter(note => {
+    // Check for note entries where the title is in the search query
+    const matchesQuery = String(note.temporaryTitle ?? '').toLowerCase().includes(query) || String(note.title ?? '').toLowerCase().includes(query);
+    return matchesQuery;
+  });
+  });
+
 
 // Watcher to unselect the select all checkbox if there are no reminders or notes in the array (ex. none made or after deletion)
 watch([filteredReminders, notes, tab], () => {
@@ -1414,6 +1605,13 @@ watch([filteredReminders, notes, tab], () => {
   }
   if (tab.value === 'notes' && notes.value.length === 0) {
     selectAll.value = false;
+  }
+});
+
+// Watcher on cloud sync toggle to reset message when changed
+watch(isCloudOn, (enabled) => {
+  if (!enabled) {
+    syncStatusMessage.value = 'Cloud Sync Disabled';
   }
 });
 
@@ -1456,11 +1654,15 @@ function onNext() {
     calendar.value.next()
   }
 }
-function onMoved(data: Timestamp) {
-  console.info('onMoved', data)
+
+// Show reminders for current calendar month
+async function onMoved(data: Timestamp) {
+  console.log('qcalendar onMoved payload:', data);
+  await loadRemindersForMonth(selectedDate.value);
 }
-function onChange(data: { start: Timestamp; end: Timestamp; days: Timestamp[] }) {
-  console.info('onChange', data)
+async function onChange(data: Timestamp) {
+  console.log('qcalendar onChange payload:', data);
+  await loadRemindersForMonth(selectedDate.value);
 }
 
 function onClickDate(data: Timestamp) {

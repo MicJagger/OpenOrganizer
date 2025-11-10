@@ -1,7 +1,7 @@
 /*
  * Authors: Michael Jagiello, Kevin Sirantoine, Maria Pasaylo, Rachel Patella
  * Created: 2025-04-13
- * Updated: 2025-11-05
+ * Updated: 2025-11-08
  *
  * This file is the Electron main process entry point that creates the application window,
  * manages the system tray icon, and handles communication between the user
@@ -23,7 +23,7 @@ import { registerHandlers } from "./services/handlers";
 import { sync } from "./services/sync";
 import * as fs from "node:fs";
 import {getAutoSyncEnabled} from "app/src-electron/services/auth";
-
+import { InitNotifications } from "./services/notifs";
 
 // needed in case process is undefined under Linux
 const platform = process.platform || os.platform();
@@ -40,8 +40,8 @@ async function createWindow() {
    */
   mainWindow = new BrowserWindow({
     icon: path.resolve(currentDir, 'icons/icon.png'), // tray icon
-    width: 1000,
-    height: 600,
+    width: 1280,
+    height: 720,
     useContentSize: true,
     webPreferences: {
       contextIsolation: true,
@@ -113,4 +113,5 @@ function init() {
   registerHandlers(); // Registers all ipcMain handlers for APIs exposed in electron-preload
   serverAddress = fs.readFileSync(path.join(app.getAppPath(), '../../public/serveraddress.txt'), 'utf8');
   if (getAutoSyncEnabled()) void sync(); // sync on startup if autoSyncEnabled is true
+  InitNotifications();
 }

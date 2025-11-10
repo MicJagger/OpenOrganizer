@@ -24,6 +24,7 @@ export type UINote = Note & {
   temporaryTitle: string;
   temporaryText: string;
   temporaryFolderID: bigint | null; 
+  temporaryLastModified: string;
   titleMessageError?: string;
   folderMessageError?: string;
   isSaved: boolean;
@@ -40,6 +41,7 @@ export type UIReminder = Reminder & {
   temporaryNotificationTime: number | null;
   temporaryEventStartTime: string | null;
   temporaryEventEndTime: string | null;
+  temporaryLastModified: string;
   titleMessageError?: string;
   folderMessageError?: string;
   timeMessageError?: string;
